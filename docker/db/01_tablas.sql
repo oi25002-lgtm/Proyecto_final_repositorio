@@ -315,4 +315,75 @@ CREATE TABLE tbl_favorito (
     CONSTRAINT fk_favorito_usuario FOREIGN KEY (id_usuario) REFERENCES tbl_usuario(id_usuario) ON DELETE RESTRICT
 );
 
+-- Objetos de consulta y protección. La aplicación no los usa: sirven para
+-- consultar la base directamente y para reforzar una regla del negocio.
+
+-- Vista: trabajos que se ven en el catálogo público, con sus datos de
+-- clasificación y sus autores en el orden de autoría.
+CREATE VIEW vw_catalogo_publicado AS
+SELECT
+    p.id_proyecto,
+    p.titulo,
+    p.anio,
+    tp.nombre AS tipo,
+    d.nombre AS departamento,
+    c.nombre AS carrera,
+    t.nombre AS area,
+    p.es_destacado,
+    (SELECT string_agg(a.nombres || ' ' || a.apellidos, ', ' ORDER BY pa.orden_autoria)
+       FROM tbl_proyecto_autor pa
+       JOIN tbl_autor a ON a.id_autor = pa.id_autor
+      WHERE pa.id_proyecto = p.id_proyecto) AS autores
+FROM tbl_proyecto p
+JOIN tbl_tipo_proyecto tp ON tp.id_tipo_proyecto = p.id_tipo_proyecto
+JOIN tbl_carrera c ON c.id_carrera = p.id_carrera
+JOIN tbl_departamento d ON d.id_departamento = c.id_departamento
+JOIN tbl_tematica t ON t.id_tematica = p.id_tematica
+WHERE p.estado_publicacion = 'publicado'
+  AND p.estado_autorizacion = 'autorizado';
+
+-- Trigger: una entrega solo se puede borrar mientras sigue pendiente (RF-24).
+-- Las entregas revisadas forman parte del historial y no se eliminan.
+CREATE FUNCTION fn_proteger_entrega_revisada() RETURNS trigger
+LANGUAGE plpgsql AS $$
+BEGIN
+    IF OLD.estado_entrega <> 'pendiente' THEN
+        RAISE EXCEPTION 'La entrega % ya fue revisada (estado: %); solo se puede eliminar una entrega pendiente.',
+            OLD.id_entrega, OLD.estado_entrega;
+    END IF;
+    RETURN OLD;
+END;
+$$;
+
+CREATE TRIGGER trg_proteger_entrega_revisada
+    BEFORE DELETE ON tbl_entrega
+    FOR EACH ROW EXECUTE FUNCTION fn_proteger_entrega_revisada();
+
+-- Función: los cuatro indicadores de la pantalla de Estadísticas.
+-- Cada proyecto cuenta una sola vez, aunque tenga varias entregas.
+-- Sin parámetros devuelve el total; con año o área filtra por ellos.
+CREATE FUNCTION fn_estadisticas(p_anio integer DEFAULT NULL, p_id_tematica integer DEFAULT NULL)
+RETURNS TABLE (proyectos bigint, publicados bigint, en_revision bigint, tasa_aprobacion integer)
+LANGUAGE sql STABLE AS $$
+    WITH elegidos AS (
+        SELECT id_proyecto, estado_publicacion
+        FROM tbl_proyecto
+        WHERE (p_anio IS NULL OR anio = p_anio)
+          AND (p_id_tematica IS NULL OR id_tematica = p_id_tematica)
+    ), sus_entregas AS (
+        SELECT e.estado_entrega
+        FROM tbl_entrega e
+        JOIN elegidos el ON el.id_proyecto = e.id_proyecto
+    )
+    SELECT
+        (SELECT count(*) FROM elegidos),
+        (SELECT count(*) FROM elegidos WHERE estado_publicacion = 'publicado'),
+        (SELECT count(*) FROM sus_entregas WHERE estado_entrega IN ('pendiente', 'en_revision')),
+        (SELECT CASE WHEN count(*) FILTER (WHERE estado_entrega NOT IN ('pendiente', 'en_revision')) = 0 THEN NULL
+                     ELSE round(100.0 * count(*) FILTER (WHERE estado_entrega = 'aprobada')
+                                / count(*) FILTER (WHERE estado_entrega NOT IN ('pendiente', 'en_revision')))::integer
+                END
+           FROM sus_entregas);
+$$;
+
 COMMIT;

@@ -18,7 +18,7 @@ archivos (RNF-06).
 | `frontend-angular/src/app/catalogo/` | Catálogo público: búsqueda, filtros, ficha y favoritos |
 | `frontend-angular/src/app/publicaciones/` | Envío de proyectos, Mis proyectos y notificaciones |
 | `frontend-angular/src/app/gestion/` | Panel del supervisor, estadísticas y panel del administrador |
-| `docker/` | Instalación con Docker. `db/01_tablas.sql` crea las tablas en orden, `db/02_datos.sql` carga los datos de prueba y `entregas/` trae los PDF y ZIP de ejemplo |
+| `docker/` | Instalación con Docker. `db/01_tablas.sql` crea las tablas en orden y, al final, una vista, un trigger y una función de consulta; `db/02_datos.sql` carga los datos de prueba y `entregas/` trae los PDF y ZIP de ejemplo |
 
 ## Instalación rápida (recomendada)
 
