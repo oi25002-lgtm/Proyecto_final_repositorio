@@ -30,7 +30,7 @@ compila y se ejecuta dentro de contenedores.
 2. Descargar el proyecto:
 
    ```powershell
-   git clone https://github.com/Maarjorie/Proyecto_final_repositorio.git
+   git clone https://github.com/oi25002-lgtm/Proyecto_final_repositorio.git
    cd Proyecto_final_repositorio
    ```
 
