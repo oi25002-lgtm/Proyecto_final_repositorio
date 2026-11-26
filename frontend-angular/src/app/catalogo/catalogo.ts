@@ -1,13 +1,13 @@
 import { SesionUsuarioComponent } from '../auth/sesion-usuario';
 import { esCuentaDeGestion, sesionActiva, usuarioTieneRol } from '../auth/auth.guard';
-import { AUTH_TOKEN_KEY } from '../auth/auth.constants';
 import { Component, computed, effect, input, model, OnInit, signal, untracked, WritableSignal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { RouterLink, RouterLinkActive } from '@angular/router';
 import type { Work } from '../app';
 import { afterNextRender, DestroyRef, inject, Injector } from '@angular/core';
-import { HttpClient, HttpErrorResponse } from '@angular/common/http';
+import { HttpErrorResponse } from '@angular/common/http';
 import { API_URL } from '../api-url';
+import { CatalogoService } from '../servicios/catalogo.service';
 
 
 /** Grupos de filtros del catálogo. */
@@ -53,7 +53,7 @@ export class Catalogo implements OnInit {
   readonly esSupervisor = usuarioTieneRol('supervisor');
   readonly esGestion = esCuentaDeGestion();
   readonly active = input.required<boolean>();
-  private readonly http = inject(HttpClient);
+  private readonly catalogoApi = inject(CatalogoService);
 
   /** Fichas publicadas. */
   readonly works = signal<Work[]>([]);
@@ -347,14 +347,14 @@ export class Catalogo implements OnInit {
   }
 
   ngOnInit(): void {
-    this.http.get<OpcionApi[]>(API_URL + '/catalogos/tematicas').subscribe({
+    this.catalogoApi.listar<OpcionApi>('/catalogos/tematicas').subscribe({
       next: (tematicas) => this.areas.set(tematicas.map((tematica) => this.capitalizar(tematica.nombre))),
       error: () => this.areas.set([])
     });
 
     this.cargarFavoritos();
 
-    this.http.get<FichaApi[]>(API_URL + '/catalogo').subscribe({
+    this.catalogoApi.fichas<FichaApi>().subscribe({
       next: (fichas) => {
         this.works.set(fichas.map((ficha) => this.aWork(ficha)));
         this.cargandoCatalogo.set(false);
@@ -505,20 +505,11 @@ export class Catalogo implements OnInit {
     }
   }
 
-  private authHeaders(): { Authorization: string } {
-    let token = '';
-    try {
-      token = globalThis.sessionStorage?.getItem(AUTH_TOKEN_KEY) ?? '';
-    } catch {
-      token = '';
-    }
-    return { Authorization: 'Bearer ' + token };
-  }
 
   /** Carga los favoritos de la cuenta. */
   private cargarFavoritos(): void {
     if (!this.conSesion) return;
-    this.http.get<number[]>(API_URL + '/favoritos', { headers: this.authHeaders() }).subscribe({
+    this.catalogoApi.favoritos().subscribe({
       next: (ids) => this.favoriteIds.set(ids),
       error: () => this.favoriteIds.set([])
     });
@@ -569,10 +560,9 @@ export class Catalogo implements OnInit {
     const guardado = anterior.includes(id);
     // Se marca al instante y se revierte si falla.
     this.favoriteIds.set(guardado ? anterior.filter((item) => item !== id) : [...anterior, id]);
-    const url = API_URL + '/favoritos/' + id;
     const peticion = guardado
-      ? this.http.delete(url, { headers: this.authHeaders() })
-      : this.http.put(url, null, { headers: this.authHeaders() });
+      ? this.catalogoApi.quitarFavorito(id)
+      : this.catalogoApi.guardarFavorito(id);
     peticion.subscribe({
       error: () => {
         this.favoriteIds.set(anterior);

@@ -1,10 +1,10 @@
-import { HttpClient, HttpErrorResponse } from '@angular/common/http';
+import { HttpErrorResponse } from '@angular/common/http';
 import { ChangeDetectorRef, Component, inject, OnInit } from '@angular/core';
 import { RouterLink, RouterLinkActive } from '@angular/router';
 import { AUTH_TOKEN_KEY } from '../../auth/auth.constants';
 import { SesionUsuarioComponent } from '../../auth/sesion-usuario';
 import { OpcionBuscable, SelectorBuscable } from '../../compartido/selector-buscable';
-import { API_URL } from '../../api-url';
+import { RevisionService } from '../../servicios/revision.service';
 
 
 /** Un proyecto, con lo necesario para filtrar y agrupar. */
@@ -61,7 +61,7 @@ const sinPrefijo = (departamento: string) => departamento.replace(/^departamento
   ]
 })
 export class EstadisticasComponent implements OnInit {
-  private readonly http = inject(HttpClient);
+  private readonly revisionApi = inject(RevisionService);
   private readonly cdr = inject(ChangeDetectorRef);
 
   estadisticas: Estadisticas | null = null;
@@ -95,8 +95,8 @@ export class EstadisticasComponent implements OnInit {
     }
 
     this.cargando = true;
-    this.http
-      .get<Estadisticas>(API_URL + '/revision/estadisticas', { headers: { Authorization: 'Bearer ' + token } })
+    this.revisionApi
+      .estadisticas<Estadisticas>()
       .subscribe({
         next: datos => {
           this.estadisticas = datos;

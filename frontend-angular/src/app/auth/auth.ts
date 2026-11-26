@@ -1,10 +1,10 @@
-import { HttpClient } from '@angular/common/http';
 import { ChangeDetectorRef, Component, inject, input } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { firstValueFrom, timeout } from 'rxjs';
 import { mensajeDeError, validarContrasenaNueva, validarCorreo, validarNombre } from '../compartido/validacion';
-import { AUTH_API_URL, AUTH_EXPIRY_KEY, AUTH_TOKEN_KEY, AUTH_USER_KEY } from './auth.constants';
+import { AUTH_EXPIRY_KEY, AUTH_TOKEN_KEY, AUTH_USER_KEY } from './auth.constants';
+import { AutenticacionService } from '../servicios/autenticacion.service';
 
 type AuthMode = 'login' | 'registro';
 
@@ -30,7 +30,7 @@ interface AuthResponse {
 export class AuthComponent {
   readonly mode = input<AuthMode>('login');
 
-  private readonly http = inject(HttpClient);
+  private readonly autenticacion = inject(AutenticacionService);
   private readonly router = inject(Router);
   private readonly route = inject(ActivatedRoute);
   private readonly cdr = inject(ChangeDetectorRef);
@@ -134,7 +134,7 @@ export class AuthComponent {
 
     try {
       const response = await firstValueFrom(
-        this.http.post<AuthResponse>(AUTH_API_URL + '/' + endpoint, payload).pipe(timeout(30000))
+        this.autenticacion.enviar<AuthResponse>(endpoint, payload).pipe(timeout(30000))
       );
 
       try {

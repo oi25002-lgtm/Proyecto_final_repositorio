@@ -1,12 +1,13 @@
 import { SesionUsuarioComponent } from '../../auth/sesion-usuario';
 import { DatePipe } from '@angular/common';
-import { HttpClient, HttpErrorResponse } from '@angular/common/http';
+import { HttpErrorResponse } from '@angular/common/http';
 import { ChangeDetectorRef, Component, inject, OnInit } from '@angular/core';
 import { RouterLink, RouterLinkActive } from '@angular/router';
 import { Observable } from 'rxjs';
 import { AUTH_TOKEN_KEY } from '../../auth/auth.constants';
 import { tienePalabraDemasiadoLarga } from '../../compartido/validacion';
-import { API_URL } from '../../api-url';
+import { RevisionService } from '../../servicios/revision.service';
+import { ProyectosService } from '../../servicios/proyectos.service';
 
 
 interface RecursoRevision {
@@ -126,7 +127,8 @@ interface BorradorPermiso {
   ]
 })
 export class RevisionSupervisorComponent implements OnInit {
-  private readonly http = inject(HttpClient);
+  private readonly revisionApi = inject(RevisionService);
+  private readonly proyectosApi = inject(ProyectosService);
   // La app es zoneless: se repinta con markForCheck().
   private readonly cdr = inject(ChangeDetectorRef);
 
@@ -443,11 +445,7 @@ export class RevisionSupervisorComponent implements OnInit {
   iniciarRevision(entrega: EntregaRevision): void {
     this.ejecutar(
       entrega.id,
-      this.http.post<{ mensaje: string }>(
-        API_URL + '/revision/' + entrega.id + '/iniciar',
-        {},
-        { headers: this.cabeceras() ?? {} }
-      ),
+      this.revisionApi.iniciar(entrega.id),
       () => {
         entrega.enRevision = true;
         entrega.revisadaPor = 'tú';
@@ -499,11 +497,7 @@ export class RevisionSupervisorComponent implements OnInit {
 
     this.ejecutar(
       entrega.id,
-      this.http.post<{ mensaje: string }>(
-        API_URL + '/revision/' + entrega.id + '/decision',
-        cuerpo,
-        { headers: this.cabeceras() ?? {} }
-      ),
+      this.revisionApi.decidir(entrega.id, cuerpo),
       respuesta => {
         this.mensaje = respuesta.mensaje;
         this.entregas = this.entregas.filter(item => item.id !== entrega.id);
@@ -558,10 +552,9 @@ export class RevisionSupervisorComponent implements OnInit {
 
     this.ejecutar(
       publicacion.idProyecto,
-      this.http.put<{ mensaje: string }>(
-        API_URL + '/revision/proyectos/' + publicacion.idProyecto + '/permiso',
-        { permiso: borrador.permiso, recursosAutorizados: borrador.recursos, asesoresAutorizados: borrador.asesores },
-        { headers: this.cabeceras() ?? {} }
+      this.revisionApi.guardarPermiso(
+        publicacion.idProyecto,
+        { permiso: borrador.permiso, recursosAutorizados: borrador.recursos, asesoresAutorizados: borrador.asesores }
       ),
       respuesta => {
         this.mensaje = respuesta.mensaje;
@@ -573,11 +566,7 @@ export class RevisionSupervisorComponent implements OnInit {
   alternarDestacado(publicacion: Publicacion): void {
     this.ejecutar(
       publicacion.idProyecto,
-      this.http.put<{ mensaje: string; destacado: boolean }>(
-        API_URL + '/revision/proyectos/' + publicacion.idProyecto + '/destacado',
-        { destacado: !publicacion.destacado },
-        { headers: this.cabeceras() ?? {} }
-      ),
+      this.revisionApi.cambiarDestacado(publicacion.idProyecto, !publicacion.destacado),
       respuesta => {
         this.mensaje = respuesta.mensaje;
         publicacion.destacado = respuesta.destacado;
@@ -613,11 +602,7 @@ export class RevisionSupervisorComponent implements OnInit {
 
     this.ejecutar(
       publicacion.idProyecto,
-      this.http.post<{ mensaje: string }>(
-        API_URL + '/revision/proyectos/' + publicacion.idProyecto + '/retirar',
-        { motivo },
-        { headers: this.cabeceras() ?? {} }
-      ),
+      this.revisionApi.retirar(publicacion.idProyecto, motivo),
       respuesta => {
         this.mensaje = respuesta.mensaje;
         this.retirandoId = null;
@@ -640,11 +625,8 @@ export class RevisionSupervisorComponent implements OnInit {
       return;
     }
 
-    this.http
-      .get(API_URL + '/proyectos/recursos/' + recurso.id, {
-        headers: cabeceras,
-        responseType: 'blob'
-      })
+    this.proyectosApi
+      .descargarRecurso(recurso.id)
       .subscribe({
         next: archivo => {
           const url = URL.createObjectURL(archivo);
@@ -671,8 +653,8 @@ export class RevisionSupervisorComponent implements OnInit {
     }
 
     this.cargando = true;
-    this.http
-      .get<EntregaRevision[]>(API_URL + '/revision/pendientes', { headers: cabeceras })
+    this.revisionApi
+      .pendientes<EntregaRevision>()
       .subscribe({
         next: datos => {
           this.entregas = datos;
@@ -694,8 +676,8 @@ export class RevisionSupervisorComponent implements OnInit {
     }
 
     this.cargandoPublicaciones = true;
-    this.http
-      .get<Publicacion[]>(API_URL + '/revision/publicaciones', { headers: cabeceras })
+    this.revisionApi
+      .publicaciones<Publicacion>()
       .subscribe({
         next: datos => {
           this.publicaciones = datos;

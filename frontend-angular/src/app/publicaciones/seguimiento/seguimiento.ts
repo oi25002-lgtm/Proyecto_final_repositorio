@@ -1,11 +1,11 @@
 import { SesionUsuarioComponent } from '../../auth/sesion-usuario';
 import { esCuentaDeGestion, usuarioTieneRol } from '../../auth/auth.guard';
 import { DatePipe } from '@angular/common';
-import { HttpClient, HttpErrorResponse } from '@angular/common/http';
+import { HttpErrorResponse } from '@angular/common/http';
 import { ChangeDetectorRef, Component, inject, OnInit } from '@angular/core';
 import { RouterLink, RouterLinkActive } from '@angular/router';
 import { AUTH_TOKEN_KEY } from '../../auth/auth.constants';
-import { API_URL } from '../../api-url';
+import { ProyectosService } from '../../servicios/proyectos.service';
 
 
 export type EstadoSolicitud =
@@ -92,7 +92,7 @@ export interface DetalleSolicitud {
   styleUrl: './seguimiento.css'
 })
 export class SeguimientoComponent implements OnInit {
-  private readonly http = inject(HttpClient);
+  private readonly proyectosApi = inject(ProyectosService);
   // La app es zoneless: se repinta con markForCheck().
   private readonly cdr = inject(ChangeDetectorRef);
 
@@ -166,10 +166,8 @@ export class SeguimientoComponent implements OnInit {
     this.cargandoDetalleId = proyecto.id;
     this.errorDetalle = '';
 
-    this.http
-      .get<DetalleSolicitud>(API_URL + '/proyectos/mis-proyectos/' + proyecto.id, {
-        headers: { Authorization: 'Bearer ' + token }
-      })
+    this.proyectosApi
+      .solicitud<DetalleSolicitud>(proyecto.id)
       .subscribe({
         next: datos => {
           this.detalle = datos;
@@ -205,11 +203,8 @@ export class SeguimientoComponent implements OnInit {
       return;
     }
 
-    this.http
-      .get(API_URL + '/proyectos/recursos/' + recurso.id, {
-        headers: { Authorization: 'Bearer ' + token },
-        responseType: 'blob'
-      })
+    this.proyectosApi
+      .descargarRecurso(recurso.id)
       .subscribe({
         next: archivo => {
           const url = URL.createObjectURL(archivo);
@@ -248,10 +243,8 @@ export class SeguimientoComponent implements OnInit {
     this.eliminandoId = id;
     this.errorDetalle = '';
 
-    this.http
-      .delete<{ mensaje: string }>(API_URL + '/proyectos/mis-proyectos/' + id, {
-        headers: { Authorization: 'Bearer ' + token }
-      })
+    this.proyectosApi
+      .eliminarSolicitud(id)
       .subscribe({
         next: respuesta => {
           this.mensajeExito = respuesta.mensaje;
@@ -293,10 +286,8 @@ export class SeguimientoComponent implements OnInit {
       return;
     }
 
-    this.http
-      .get<ProyectoEnSeguimiento[]>(API_URL + '/proyectos/mis-proyectos', {
-        headers: { Authorization: 'Bearer ' + token }
-      })
+    this.proyectosApi
+      .misProyectos<ProyectoEnSeguimiento>()
       .subscribe({
         next: datos => {
           this.aplicarEnvios(datos);

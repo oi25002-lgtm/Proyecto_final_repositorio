@@ -1,13 +1,14 @@
 import { SesionUsuarioComponent } from '../../auth/sesion-usuario';
 import { esCuentaDeGestion, usuarioTieneRol } from '../../auth/auth.guard';
-import { HttpClient, HttpErrorResponse } from '@angular/common/http';
+import { HttpErrorResponse } from '@angular/common/http';
 import { ChangeDetectorRef, Component, inject, OnInit } from '@angular/core';
 import { ActivatedRoute, RouterLink, RouterLinkActive } from '@angular/router';
 import { REGLAS, esCarnet, mensajeDeError, tienePalabraDemasiadoLarga, validarNombre } from '../../compartido/validacion';
 import { firstValueFrom, retry, timeout } from 'rxjs';
 import { AUTH_TOKEN_KEY } from '../../auth/auth.constants';
 import { OpcionBuscable, SelectorBuscable } from '../../compartido/selector-buscable';
-import { API_URL } from '../../api-url';
+import { CatalogoService } from '../../servicios/catalogo.service';
+import { ProyectosService } from '../../servicios/proyectos.service';
 
 interface AutorFormulario {
   nombres: string;
@@ -85,7 +86,8 @@ interface CarreraCatalogo extends OpcionCatalogo {
   styleUrl: './envio-proyecto.css'
 })
 export class EnvioProyectoComponent implements OnInit {
-  private readonly http = inject(HttpClient);
+  private readonly catalogoApi = inject(CatalogoService);
+  private readonly proyectosApi = inject(ProyectosService);
   // La app es zoneless: se repinta con markForCheck().
   private readonly cdr = inject(ChangeDetectorRef);
 
@@ -226,8 +228,8 @@ export class EnvioProyectoComponent implements OnInit {
       return;
     }
     this.cargandoMaterias = true;
-    this.http
-      .get<MateriaCatalogo[]>(API_URL + '/catalogos/materias', { params: { carreraId: idCarrera } })
+    this.catalogoApi
+      .listar<MateriaCatalogo>('/catalogos/materias', { carreraId: idCarrera })
       .subscribe({
         next: datos => {
           this.cargandoMaterias = false;
@@ -358,10 +360,8 @@ export class EnvioProyectoComponent implements OnInit {
     }
 
     this.cargandoCorreccion = true;
-    this.http
-      .get<SolicitudACorregir>(API_URL + '/proyectos/mis-proyectos/' + idEntrega, {
-        headers: { Authorization: 'Bearer ' + token }
-      })
+    this.proyectosApi
+      .solicitud<SolicitudACorregir>(idEntrega)
       .subscribe({
         next: datos => {
           this.cargandoCorreccion = false;
@@ -436,8 +436,8 @@ export class EnvioProyectoComponent implements OnInit {
       // Sin acceso al almacenamiento no hay copia que borrar.
     }
 
-    this.http
-      .get<T[]>(API_URL + endpoint)
+    this.catalogoApi
+      .listar<T>(endpoint)
       .pipe(retry({ count: 2, delay: 500 }))
       .subscribe({
         next: datos => {
@@ -767,17 +767,13 @@ export class EnvioProyectoComponent implements OnInit {
     this.limpiarMensajes();
 
     // Corrección y actualización se envían como otra entrega del proyecto.
-    const url = this.correccion
-      ? API_URL + '/proyectos/mis-proyectos/' + this.correccion.id + (this.actualizando ? '/actualizacion' : '/reenvio')
-      : API_URL + '/proyectos';
+    const ruta = this.correccion
+      ? '/proyectos/mis-proyectos/' + this.correccion.id + (this.actualizando ? '/actualizacion' : '/reenvio')
+      : '/proyectos';
 
     try {
       const respuesta = await firstValueFrom(
-        this.http.post<RespuestaEnvio>(
-          url,
-          datos,
-          { headers: { Authorization: 'Bearer ' + token } }
-        ).pipe(timeout(180000))
+        this.proyectosApi.enviar<RespuestaEnvio>(ruta, datos).pipe(timeout(180000))
       );
 
       this.mensajeExito = respuesta.mensaje;

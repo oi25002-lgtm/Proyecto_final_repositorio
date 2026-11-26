@@ -1,11 +1,11 @@
 import { SesionUsuarioComponent } from '../../auth/sesion-usuario';
 import { esCuentaDeGestion, usuarioTieneRol } from '../../auth/auth.guard';
 import { DatePipe } from '@angular/common';
-import { HttpClient, HttpErrorResponse } from '@angular/common/http';
+import { HttpErrorResponse } from '@angular/common/http';
 import { ChangeDetectorRef, Component, inject, OnInit } from '@angular/core';
 import { Router, RouterLink, RouterLinkActive } from '@angular/router';
 import { AUTH_TOKEN_KEY } from '../../auth/auth.constants';
-import { API_URL } from '../../api-url';
+import { NotificacionesService } from '../../servicios/notificaciones.service';
 
 
 /** Minúsculas y sin tildes. */
@@ -37,7 +37,7 @@ export interface Notificacion {
   styleUrl: './notificaciones.css'
 })
 export class NotificacionesComponent implements OnInit {
-  private readonly http = inject(HttpClient);
+  private readonly notificacionesApi = inject(NotificacionesService);
   private readonly router = inject(Router);
   // La app es zoneless: se repinta con markForCheck().
   private readonly cdr = inject(ChangeDetectorRef);
@@ -114,8 +114,8 @@ export class NotificacionesComponent implements OnInit {
       return;
     }
 
-    this.http
-      .get<Notificacion[]>(API_URL + '/notificaciones', { headers: cabeceras })
+    this.notificacionesApi
+      .listar<Notificacion>()
       .subscribe({
         next: datos => {
           this.notificaciones = datos;
@@ -157,8 +157,8 @@ export class NotificacionesComponent implements OnInit {
     }
 
     notificacion.leida = true;
-    this.http
-      .post(API_URL + '/notificaciones/' + notificacion.id + '/leida', null, { headers: cabeceras })
+    this.notificacionesApi
+      .marcarLeida(notificacion.id)
       .subscribe({
         error: () => {
           notificacion.leida = false;
@@ -175,8 +175,8 @@ export class NotificacionesComponent implements OnInit {
 
     const pendientes = this.notificaciones.filter(notificacion => !notificacion.leida);
     pendientes.forEach(notificacion => notificacion.leida = true);
-    this.http
-      .post(API_URL + '/notificaciones/leidas', null, { headers: cabeceras })
+    this.notificacionesApi
+      .marcarTodas()
       .subscribe({
         error: (error: unknown) => {
           pendientes.forEach(notificacion => notificacion.leida = false);

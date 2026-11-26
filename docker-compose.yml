@@ -4,6 +4,9 @@
 services:
   db:
     image: postgres:17
+    # Puerto para conectarse con pgAdmin: localhost:5435, usuario postgres.
+    ports:
+      - "${PUERTO_BD:-5435}:5432"
     environment:
       POSTGRES_DB: repositorio_db
       POSTGRES_USER: postgres

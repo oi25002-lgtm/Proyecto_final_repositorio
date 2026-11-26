@@ -315,11 +315,13 @@ CREATE TABLE tbl_favorito (
     CONSTRAINT fk_favorito_usuario FOREIGN KEY (id_usuario) REFERENCES tbl_usuario(id_usuario) ON DELETE RESTRICT
 );
 
--- Objetos de consulta y protección. La aplicación no los usa: sirven para
--- consultar la base directamente y para reforzar una regla del negocio.
+-- Índice, vista, función, trigger y procedimiento.
+-- La aplicación no los usa; se consultan directamente en la base.
 
--- Vista: trabajos que se ven en el catálogo público, con sus datos de
--- clasificación y sus autores en el orden de autoría.
+-- 24. ix_proyecto_publicacion_anio: filtra el catálogo y las estadísticas por publicación y año.
+CREATE INDEX ix_proyecto_publicacion_anio ON tbl_proyecto USING btree (estado_publicacion, anio);
+
+-- 25. vw_catalogo_publicado: trabajos publicados con su clasificación y sus autores.
 CREATE VIEW vw_catalogo_publicado AS
 SELECT
     p.id_proyecto,
@@ -342,8 +344,7 @@ JOIN tbl_tematica t ON t.id_tematica = p.id_tematica
 WHERE p.estado_publicacion = 'publicado'
   AND p.estado_autorizacion = 'autorizado';
 
--- Trigger: una entrega solo se puede borrar mientras sigue pendiente (RF-24).
--- Las entregas revisadas forman parte del historial y no se eliminan.
+-- 26. trg_proteger_entrega_revisada: solo se puede borrar una entrega pendiente (RF-24).
 CREATE FUNCTION fn_proteger_entrega_revisada() RETURNS trigger
 LANGUAGE plpgsql AS $$
 BEGIN
@@ -359,9 +360,8 @@ CREATE TRIGGER trg_proteger_entrega_revisada
     BEFORE DELETE ON tbl_entrega
     FOR EACH ROW EXECUTE FUNCTION fn_proteger_entrega_revisada();
 
--- Función: los cuatro indicadores de la pantalla de Estadísticas.
+-- 27. fn_estadisticas: indicadores de la pantalla de Estadísticas, con año y área opcionales.
 -- Cada proyecto cuenta una sola vez, aunque tenga varias entregas.
--- Sin parámetros devuelve el total; con año o área filtra por ellos.
 CREATE FUNCTION fn_estadisticas(p_anio integer DEFAULT NULL, p_id_tematica integer DEFAULT NULL)
 RETURNS TABLE (proyectos bigint, publicados bigint, en_revision bigint, tasa_aprobacion integer)
 LANGUAGE sql STABLE AS $$
@@ -384,6 +384,40 @@ LANGUAGE sql STABLE AS $$
                                 / count(*) FILTER (WHERE estado_entrega NOT IN ('pendiente', 'en_revision')))::integer
                 END
            FROM sus_entregas);
+$$;
+
+-- 28. sp_retirar_publicacion: retira un trabajo publicado y guarda el motivo en el historial (RF-09).
+-- Si el usuario no es supervisor, el motivo es corto o el trabajo no está publicado, no cambia nada.
+CREATE PROCEDURE sp_retirar_publicacion(p_id_proyecto integer, p_id_usuario integer, p_motivo text)
+LANGUAGE plpgsql AS $$
+DECLARE
+    v_estado character varying;
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM tbl_usuario_rol ur JOIN tbl_rol r ON r.id_rol = ur.id_rol
+                    WHERE ur.id_usuario = p_id_usuario AND r.nombre_rol = 'supervisor') THEN
+        RAISE EXCEPTION 'Solo un supervisor puede retirar una publicación.';
+    END IF;
+    IF length(trim(coalesce(p_motivo, ''))) < 10 THEN
+        RAISE EXCEPTION 'Explica el motivo del retiro con al menos 10 caracteres.';
+    END IF;
+
+    SELECT estado_publicacion INTO v_estado FROM tbl_proyecto WHERE id_proyecto = p_id_proyecto FOR UPDATE;
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'No existe el proyecto %.', p_id_proyecto;
+    END IF;
+    IF v_estado <> 'publicado' THEN
+        RAISE EXCEPTION 'Solo se puede retirar una publicación vigente (el proyecto está %).', v_estado;
+    END IF;
+
+    UPDATE tbl_proyecto
+       SET estado_publicacion = 'retirado',
+           es_destacado = false,
+           fecha_actualizacion = GREATEST(now() AT TIME ZONE 'UTC', fecha_registro)
+     WHERE id_proyecto = p_id_proyecto;
+
+    INSERT INTO tbl_historial (id_usuario, id_proyecto, accion, detalle)
+    VALUES (p_id_usuario, p_id_proyecto, 'retiro', trim(p_motivo));
+END;
 $$;
 
 COMMIT;

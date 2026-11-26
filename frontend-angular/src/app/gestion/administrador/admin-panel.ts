@@ -1,14 +1,14 @@
-import { HttpClient, HttpErrorResponse } from '@angular/common/http';
+import { HttpErrorResponse } from '@angular/common/http';
 import { FormsModule } from '@angular/forms';
 import { Component, computed, effect, inject, input, signal, untracked } from '@angular/core';
 import { Router, RouterLink } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
-import { AUTH_TOKEN_KEY, AUTH_USER_KEY } from '../../auth/auth.constants';
+import { AUTH_USER_KEY } from '../../auth/auth.constants';
 import { cerrarSesion, usuarioTieneRol } from '../../auth/auth.guard';
 import { SesionUsuarioComponent } from '../../auth/sesion-usuario';
 import { OpcionBuscable, SelectorBuscable } from '../../compartido/selector-buscable';
-import { API_URL } from '../../api-url';
 import { validarContrasenaNueva, validarCorreo, validarNombre } from '../../compartido/validacion';
+import { AdminService } from '../../servicios/admin.service';
 
 
 type Role = 'Solicitante' | 'Supervisor' | 'Administrador';
@@ -99,7 +99,7 @@ type PendingChange =
 })
 export class AdminPanel {
   private readonly router = inject(Router);
-  private readonly http = inject(HttpClient);
+  private readonly adminApi = inject(AdminService);
 
   readonly roles: { name: Role; description: string }[] = [
     {
@@ -404,7 +404,7 @@ export class AdminPanel {
     this.saving.set(true);
     try {
       const respuesta = await firstValueFrom(
-        this.http.post<{ mensaje: string }>(API_URL + '/admin/catalogos/' + catalog.tab, body, this.options())
+        this.adminApi.agregarACatalogo(catalog.tab, body)
       );
       this.draft.set({});
       this.actionNotice.set(respuesta.mensaje);
@@ -444,8 +444,8 @@ export class AdminPanel {
       this.linkNotice.set(kind === 'carrera' ? 'Elige la carrera y el ciclo.' : 'Elige el docente.');
       return;
     }
-    await this.saveLink(() => firstValueFrom(this.http.post<{ mensaje: string }>(
-      API_URL + '/admin/materias/' + id + (kind === 'carrera' ? '/carreras' : '/docentes'), body, this.options())));
+    await this.saveLink(() => firstValueFrom(this.adminApi.vincularMateria(
+      id, kind === 'carrera' ? 'carreras' : 'docentes', body)));
     this.linkCarrera.set('');
     this.linkCiclo.set('');
     this.linkDocente.set('');
@@ -454,8 +454,8 @@ export class AdminPanel {
   async removeLink(kind: 'carrera' | 'docente', linkId: number): Promise<void> {
     const id = this.managingId();
     if (!id || this.saving()) return;
-    await this.saveLink(() => firstValueFrom(this.http.delete<{ mensaje: string }>(
-      API_URL + '/admin/materias/' + id + (kind === 'carrera' ? '/carreras/' : '/docentes/') + linkId, this.options())));
+    await this.saveLink(() => firstValueFrom(this.adminApi.desvincularMateria(
+      id, kind === 'carrera' ? 'carreras' : 'docentes', linkId)));
   }
 
   private async saveLink(request: () => Promise<{ mensaje: string }>): Promise<void> {
@@ -497,7 +497,7 @@ export class AdminPanel {
     this.saving.set(true);
     try {
       const respuesta = await firstValueFrom(
-        this.http.post<{ mensaje: string }>(API_URL + '/admin/docentes', { idUsuario, codigo, idDepartamento }, this.options())
+        this.adminApi.registrarDocente({ idUsuario, codigo, idDepartamento })
       );
       this.docenteUserId.set('');
       this.docenteCode.set('');
@@ -581,8 +581,7 @@ export class AdminPanel {
 
   private async applyChange(change: PendingChange, contrasena: string): Promise<string> {
     if (change.kind === 'create') {
-      const respuesta = await firstValueFrom(this.http.post<{ mensaje: string }>(
-        API_URL + '/admin/usuarios',
+      const respuesta = await firstValueFrom(this.adminApi.crearCuenta(
         {
           nombres: this.nuevaNombres().trim(),
           apellidos: this.nuevaApellidos().trim(),
@@ -590,8 +589,7 @@ export class AdminPanel {
           contrasena: this.nuevaContrasena(),
           roles: this.rolesNuevaCuenta(),
           contrasenaAdministrador: contrasena
-        },
-        this.options()
+        }
       ));
       for (const campo of [this.nuevaNombres, this.nuevaApellidos, this.nuevaCorreo, this.nuevaContrasena]) campo.set('');
       this.nuevaSupervisor.set(false);
@@ -600,31 +598,19 @@ export class AdminPanel {
       return respuesta.mensaje;
     }
     if (change.kind === 'delete') {
-      const respuesta = await firstValueFrom(this.http.post<{ mensaje: string }>(
-        API_URL + '/admin/catalogos/' + change.catalog + '/' + change.id + '/eliminar',
-        { contrasena },
-        this.options()
-      ));
+      const respuesta = await firstValueFrom(this.adminApi.eliminarDeCatalogo(change.catalog, change.id, contrasena));
       await this.loadCatalog(change.catalog);
       return respuesta.mensaje;
     }
 
     const user = this.users().find(item => item.id === change.id);
     if (change.kind === 'role') {
-      const respuesta = await firstValueFrom(this.http.put<{ mensaje: string }>(
-        API_URL + '/admin/usuarios/' + change.id + '/roles',
-        { rol: ROL_API[change.role], asignar: change.enabled, contrasena },
-        this.options()
-      ));
+      const respuesta = await firstValueFrom(this.adminApi.cambiarRol(change.id, { rol: ROL_API[change.role], asignar: change.enabled, contrasena }));
       await this.loadUsers();
       return respuesta.mensaje;
     }
 
-    const respuesta = await firstValueFrom(this.http.put<{ mensaje: string }>(
-      API_URL + '/admin/usuarios/' + change.id + '/activo',
-      { activo: !(user?.active ?? true), contrasena },
-      this.options()
-    ));
+    const respuesta = await firstValueFrom(this.adminApi.cambiarActivo(change.id, { activo: !(user?.active ?? true), contrasena }));
     await this.loadUsers();
     return respuesta.mensaje;
   }
@@ -654,7 +640,7 @@ export class AdminPanel {
 
   private async loadUsers(): Promise<void> {
     const datos = await firstValueFrom(
-      this.http.get<UsuarioApi[]>(API_URL + '/admin/usuarios', this.options())
+      this.adminApi.usuarios<UsuarioApi>()
     );
     this.users.set(datos.map(usuario => ({
       id: usuario.id,
@@ -668,8 +654,7 @@ export class AdminPanel {
 
   private async loadCatalog(catalog: CatalogKey): Promise<void> {
     const datos = await firstValueFrom(
-      this.http.get<Record<string, unknown>[]>(
-        API_URL + '/admin/catalogos/' + catalog, this.options())
+      this.adminApi.catalogo<Record<string, unknown>>(catalog)
     );
     const rows: CatalogRow[] = datos.map(item => {
       const row: CatalogRow = { id: String(item['id']) };
@@ -690,8 +675,7 @@ export class AdminPanel {
 
   private async loadTeachers(): Promise<void> {
     const datos = await firstValueFrom(
-      this.http.get<{ id: number; codigo: string; nombre: string; departamento: string }[]>(
-        API_URL + '/admin/catalogos/docentes', this.options())
+      this.adminApi.catalogo<{ id: number; codigo: string; nombre: string; departamento: string }>('docentes')
     );
     this.docentes.set(datos.map(docente => ({
       value: String(docente.id),
@@ -700,15 +684,6 @@ export class AdminPanel {
     })));
   }
 
-  private options(): { headers: Record<string, string> } {
-    let token = '';
-    try {
-      token = globalThis.sessionStorage?.getItem(AUTH_TOKEN_KEY) ?? '';
-    } catch {
-      token = '';
-    }
-    return { headers: { Authorization: 'Bearer ' + token } };
-  }
 
   private sessionUserId(): number | null {
     try {
